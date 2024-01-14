@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+*.vs
+*.bak
+*.vcxproj
+*.log
+*.pdb
+*.idb
+*.filters
+*.user
+x64
+
+
+
