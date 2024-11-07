@@ -14,10 +14,10 @@ namespace net
 			client
 		};
 
-		connection(owner type, asio::io_context& asioContext, asio::ip::tcp::socket socket, net::tsqueue<net::owned_message<T>>& queueIn)
+		connection(owner type, asio::io_context& asioContext, asio::ip::tcp::socket&& socket, net::tsqueue<net::owned_message<T>>& queueIn)
 			:type_(type),
 			context_(asioContext),
-			socket_(socket),
+			socket_(std::move(socket)),
 			queueIn_(queueIn)
 		{
 
@@ -29,8 +29,9 @@ namespace net
 			asio::post(context_,
 				[this, message]()
 			{
+				bool bWritingMessage = !queueOut_.empty();
 				queueOut_.push_back(message);
-				if (queueOut_.empty())
+				if (!bWritingMessage)
 					writeHeader();
 			});
 
@@ -96,7 +97,7 @@ namespace net
 
 		void readHeader()
 		{
-			asio::async_read(socket_, asio::buffer(&tempMessage_.header, sizeof(net::message<T>)),
+			asio::async_read(socket_, asio::buffer(&tempMessage_.header, sizeof(net::message_header<T>)),
 				[this](std::error_code ec, std::size_t length)
 			{
 				if (!ec)
@@ -104,14 +105,15 @@ namespace net
 					if (tempMessage_.header.size > 0)
 					{
 						tempMessage_.body.resize(tempMessage_.header.size);
-						AddToIncommingMessageQueue();
+						readBody();
 					}
 					else
-						readHeader();
+						AddToIncommingMessageQueue();
 				}
 				else
 				{
-					std::cout << "[" << id_ << "] read header failed" << std::endl;
+					std::cout << "[" << ec.message()/*id_*/ << "] read header failed" << std::endl;
+					
 					socket_.close();
 				}
 			});
@@ -136,7 +138,7 @@ namespace net
 
 		void writeHeader()
 		{
-			asio::async_write(socket_, asio::buffer(&queueOut_.front(), sizeof(net::message_header<T>)),
+			asio::async_write(socket_, asio::buffer(&queueOut_.front().header, sizeof(net::message_header<T>)),
 				[this](std::error_code ec, std::size_t length)
 			{
 				if (!ec)

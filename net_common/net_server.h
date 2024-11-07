@@ -4,6 +4,8 @@
 #include "net_ts_queue.h"
 #include "net_connection.h"
 
+#include "message_types.h"
+
 namespace net
 {
 	template<typename T>
@@ -67,12 +69,15 @@ namespace net
 			}
 		}
 
-		void sendToAllClients(const net::message<T>& message)
+		void sendToAllClients(const net::message<T>& message, std::shared_ptr<net::connection<T>> ignore)
 		{
 			bool invalidClientExist = false;
 
 			for (auto& client : connections_)
 			{
+				if (client == ignore)
+					continue;
+
 				if (client && client->isConnected())
 				{
 					client->send(message);
@@ -100,7 +105,7 @@ namespace net
 					auto newConnection = std::make_shared<net::connection<T>>(connection<T>::owner::server, context_, std::move(socket), queueIn_);
 					if (onNewConnection(newConnection))
 					{
-						connections_.push_back(newConnection);
+						connections_.push_back(std::move(newConnection));
 						connections_.back()->connectToClient(nIDCounter_++);
 						std::cout << "[SERVER] - [" << connections_.back()->getID() << "] connection approved" << std::endl;
 					}

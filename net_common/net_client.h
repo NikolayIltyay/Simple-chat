@@ -4,6 +4,8 @@
 #include "net_ts_queue.h"
 #include "net_connection.h"
 
+#include <memory>
+
 namespace net
 {
 	template<typename T>
@@ -19,7 +21,7 @@ namespace net
 				asio::ip::tcp::resolver resolver(context_);
 				auto endPoints = resolver.resolve(host, std::to_string(port));
 
-				connection_ = std::make_unique<net::connection>(net::connection::owner::client, context_, asio::ip::tcp::socket(context_), queueIn_);
+				connection_ = std::make_unique<net::connection<T>>(net::connection<T>::owner::client, context_, asio::ip::tcp::socket(context_), queueIn_);
 				connection_->connectToServer(endPoints);
 
 				contextThread_ = std::thread([this]()
@@ -43,13 +45,18 @@ namespace net
 				connection_->send(message);
 		}
 
-		void update()
+		bool update()
 		{
 			if (!isConnected())
-				return;
+				return false;
 
 			if (!queueIn_.empty())
+			{
 				handleInMessage(queueIn_.popFront());
+				return true;
+			}
+
+			return false;
 		}
 
 		void disconnect()

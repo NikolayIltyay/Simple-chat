@@ -71,7 +71,7 @@ namespace net
 			body.resize(prevSize + str.size());
 			std::memcpy(body.data() + prevSize, reinterpret_cast<void const*>(str.data()), str.size());
 
-			header.size = size();
+			header.size = static_cast<uint32_t>(size());
 
 			return *this;
 		}
@@ -83,6 +83,15 @@ namespace net
 			body.clear();
 
 			header.size = size();
+
+			return *this;
+		}
+
+		message<T>& operator <<(const std::vector<uint8_t>& buffer)
+		{
+			body = buffer;
+
+			header.size = static_cast<uint32_t>(size());
 
 			return *this;
 		}
