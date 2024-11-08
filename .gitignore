@@ -33,7 +33,6 @@
 
 *.vs
 *.bak
-*.vcxproj
 *.log
 *.pdb
 *.idb
