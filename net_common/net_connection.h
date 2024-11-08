@@ -5,6 +5,7 @@
 
 namespace net
 {
+
 	template<typename T>
 	class connection : public std::enable_shared_from_this<connection<T>>
 	{
@@ -23,6 +24,13 @@ namespace net
 
 		}
 
+		uint64_t encrypt(uint64_t nInput)
+		{
+			uint64_t out = nInput ^ 0xDEADBEEFC0DECAFE;
+			out = (out & 0xF0F0F0F0F0F0F0) >> 4 | (out & 0x0F0F0F0F0F0F0F) << 4;
+			return out ^ 0xC0DEFACE12345678;
+		}
+
 		void send(const net::message<T>& message)
 		{
 
@@ -37,11 +45,6 @@ namespace net
 
 		}
 
-		//net::owned_message<T>& getInMessageQueue()
-		//{
-		//	return queueIn_;
-		//}
-
 		void connectToServer(asio::ip::tcp::resolver::results_type& endpoints)
 		{
 			if (type_ == owner::server)
@@ -51,11 +54,45 @@ namespace net
 			[this](std::error_code ec, asio::ip::tcp::endpoint endpoint)
 			{
 				if (!ec)
-					readHeader();
+				{
+					waitForValidationNum();
+
+				}
 				else
 				{
 					std::cout << "Failed to connect" << std::endl;
 					disconnect();
+				}
+			});
+		}
+
+		void waitForValidationNum()
+		{
+			asio::async_read(socket_, asio::buffer(&validationNum, sizeof(validationNum)),
+				[this](std::error_code ec, std::size_t length)
+			{
+				if (!ec)
+				{
+					validationNumEncrypted = encrypt(validationNum);
+
+					asio::async_write(socket_, asio::buffer(&validationNumEncrypted, sizeof(validationNumEncrypted)),
+						[this](std::error_code ec, std::size_t length)
+					{
+						if (!ec)
+						{
+							readHeader();
+						}
+						else
+						{
+							std::cout << "[" << ec.message()/*id_*/ << "] validation reply failed." << std::endl;
+							socket_.close();
+						}
+					});
+				}
+				else
+				{
+					std::cout << "[" << ec.message()/*id_*/ << "] validation check failed" << std::endl;
+					socket_.close();
 				}
 			});
 		}
@@ -70,7 +107,53 @@ namespace net
 
 			id_ = id;
 
-			readHeader();
+			requestValidation();
+		}
+
+		void requestValidation()
+		{
+			validationNum = static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count());
+			validationNumEncrypted = encrypt(validationNum);
+
+			asio::async_write(socket_, asio::buffer(&validationNum, sizeof(validationNum)),
+				[this](std::error_code ec, std::size_t length)
+			{
+				if (!ec)
+				{
+					checkValidation();
+				}
+				else
+				{
+					std::cout << "[" << ec.message()/*id_*/ << "] validation request failed." << std::endl;
+					socket_.close();
+				}
+			});
+		}
+
+		void checkValidation()
+		{
+			asio::async_read(socket_, asio::buffer(&validationNumToCheck, sizeof(validationNumToCheck)),
+				[this](std::error_code ec, std::size_t length)
+			{
+				if (!ec)
+				{
+					if (validationNumToCheck == validationNumEncrypted)
+					{
+						std::cout << id_ << " connection - validation passed." << std::endl;
+						readHeader();
+					}
+					else
+					{
+						std::cout << id_ << " connection - validation failed." << std::endl;
+						socket_.close();
+					}
+				}
+				else
+				{
+					std::cout << "[" << ec.message()/*id_*/ << "] validation check failed" << std::endl;
+					socket_.close();
+				}
+			});
 		}
 
 		void disconnect()
@@ -202,6 +285,14 @@ namespace net
 		net::message<T> tempMessage_;
 
 		uint32_t id_{ 0 };
+
+		uint64_t validationNum{ 0 };
+		uint64_t validationNumEncrypted{ 0 };
+		uint64_t validationNumToCheck{ 0 };
+		//uint64_t validationRequestNum{ 0 };
+		//uint64_t validationNumToCheck{ 0 };
+		//uint64_t validationNumToSolve{ 0 };
+
 	};
 }
 
